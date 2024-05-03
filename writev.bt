@@ -1,0 +1,115 @@
+#!/usr/bin/bpftrace
+
+kprobe:vfs_writev
+{
+    @start_vfs_writev[tid] = nsecs;
+}
+
+kprobe:__sys_sendmmsg
+{
+  @start_sendmmsg[tid] = nsecs;
+}
+
+kretprobe:__sys_sendmmsg / @start_sendmmsg[tid] / @time_sendmsg_copy_msghdr[tid] / @time_msg_zerocopy_realloc[tid] /
+{
+  @time_sendmmsg[tid] = nsecs - @start_sendmmsg[tid];
+  printf("__sys_sendmmsg %d ",@time_sendmmsg[tid]);
+  printf("sendmsg_copy_msghdr %d ",@time_sendmsg_copy_msghdr[tid]);
+  printf("msg_zerocopy_realloc %d \n",@time_msg_zerocopy_realloc[tid]);
+}
+
+kprobe:sendmsg_copy_msghdr
+{
+  @start_sendmsg_copy_msghdr[tid] = nsecs;
+}
+
+kretprobe:sendmsg_copy_msghdr / @start_sendmsg_copy_msghdr[tid] /
+{
+  @time_sendmsg_copy_msghdr[tid] = nsecs - @start_sendmsg_copy_msghdr[tid];
+}
+
+
+kprobe:msg_zerocopy_realloc
+{
+  @start_msg_zerocopy_realloc[tid] = nsecs;
+}
+
+kretprobe:msg_zerocopy_realloc / @start_msg_zerocopy_realloc[tid] /
+{
+  @time_msg_zerocopy_realloc[tid] = nsecs -  @start_msg_zerocopy_realloc[tid];
+}
+
+
+kprobe:skb_zerocopy_iter_stream
+{
+  @start_skb_zerocopy_iter_stream[tid] = nsecs
+}
+
+kretprobe:skb_zerocopy_iter_stream /  @start_skb_zerocopy_iter_stream[tid] /
+{
+  @time_skb_zerocopy_iter_stream[tid] = nsecs -  @start_skb_zerocopy_iter_stream[tid];
+  printf("skb_zerocopy_iter_stream %d ",@time_skb_zerocopy_iter_stream[tid]);
+}
+
+
+
+
+kprobe:vfs_write 
+{
+    @start_vfs_write[tid] = nsecs;
+}
+
+kprobe:rw_verify_area{
+  @start_rw[tid] = nsecs;
+}
+
+kretprobe:rw_verify_area / @start_rw[tid] /
+{
+  @time_rw[tid] = nsecs - @start_rw[tid];
+}
+
+kprobe:do_iter_readv_writev
+{
+    @start_do_iter[tid] = nsecs;
+}
+
+kretprobe:do_iter_readv_writev / @start_do_iter[tid] /
+{
+    @time_do_iter[tid] = nsecs - @start_do_iter[tid];
+}
+
+kprobe:tcp_sendmsg_locked
+{
+    @start_tcp[tid] = nsecs;
+}
+
+kretprobe:tcp_sendmsg_locked / @start_tcp[tid] /
+{
+    @time_tcp[tid] = nsecs - @start_tcp[tid];
+}
+
+kretprobe:vfs_writev / @start_vfs_writev[tid] / @time_do_iter[tid] / @time_rw[tid] / @time_tcp[tid] /
+{
+    @time_vfsv[tid] = nsecs - @start_vfs_writev[tid];
+    printf("vfs_writev %d ", @time_vfsv[tid]);
+    printf("import_iovec %d ", @time_vfsv[tid]- @time_do_iter[tid] - @time_rw[tid]);
+    printf("tcp_sendmsg_locked_writev %d \n", @time_tcp[tid]);
+}
+kretprobe:vfs_write / @start_vfs_write[tid] / @time_tcp[tid] /{
+  @time_vfs[tid] = nsecs - @start_vfs_write[tid];
+  printf("vfs_write %d ", @time_vfs[tid]);
+  printf("import_iovec %d ",0);
+  printf("tcp_sendmsg_locked_write %d \n", @time_tcp[tid]);
+}
+
+END {
+  clear(@start_vfs_write);
+  clear(@start_do_iter);
+  clear(@start_rw);
+  clear(@start_tcp);
+  clear(@start_vfs_writev);
+  clear(@time_do_iter);
+  clear(@time_rw);
+  clear(@time_vfs);
+  clear(@time_tcp);
+}
